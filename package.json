@@ -1,5 +1,5 @@
 {
-  "name": "vite-console-forward-plugin",
+  "name": "@0xbigboss/vite-console-forward-plugin",
   "version": "2.0.1",
   "description": "A Vite plugin that forwards browser console logs to the Vite dev server console",
   "main": "dist/vite-console-forward-plugin.js",
@@ -23,11 +23,11 @@
     "development",
     "debugging"
   ],
-  "author": "",
+  "author": "0xBigBoss",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mitsuhiko/vite-console-forward-plugin"
+    "url": "https://github.com/0xBigBoss/vite-console-forward-plugin"
   },
   "devDependencies": {
     "@playwright/test": "^1.53.1",
