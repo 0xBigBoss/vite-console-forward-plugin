@@ -39,6 +39,10 @@ export interface ConsoleForwardOptions {
    * Custom function to extract module name from file path
    */
   moduleExtractor?: (filePath: string) => string;
+  /**
+   * Silent on error - don't show console warnings when server is down (default: true)
+   */
+  silentOnError?: boolean;
 }
 
 // Default module extractor
@@ -72,6 +76,7 @@ export function consoleForwardPlugin(
     levels = ["log", "warn", "error", "info", "debug"],
     injectPatterns = [],
     moduleExtractor = defaultModuleExtractor,
+    silentOnError = true,
   } = options;
 
   // Virtual modules
@@ -115,7 +120,8 @@ export function consoleForwardPlugin(
     load(id) {
       if (id === resolvedConfigModuleId) {
         if (!enabled) {
-          return "export const DEV_SERVER_ENDPOINT = '';";
+          return `export const DEV_SERVER_ENDPOINT = '';
+export const SILENT_ON_ERROR = true;`;
         }
 
         // Use the resolved Vite config to determine server URL
@@ -131,7 +137,8 @@ export function consoleForwardPlugin(
         }
 
         const serverUrl = `${protocol}://${actualHost}:${port}`;
-        return `export const DEV_SERVER_ENDPOINT = '${serverUrl}';`;
+        return `export const DEV_SERVER_ENDPOINT = '${serverUrl}';
+export const SILENT_ON_ERROR = ${silentOnError};`;
       }
 
       if (id === resolvedForwardModuleId) {
@@ -140,7 +147,7 @@ export function consoleForwardPlugin(
         }
 
         return `
-import { DEV_SERVER_ENDPOINT } from '${configModuleId}';
+import { DEV_SERVER_ENDPOINT, SILENT_ON_ERROR } from '${configModuleId}';
 
 // Module context tracking
 let currentModuleContext = 'unknown';
@@ -209,15 +216,14 @@ function createLogEntry(level, args) {
 async function sendLogs(logs) {
   try {
     const apiUrl = DEV_SERVER_ENDPOINT + '${endpoint}';
-
     await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ logs }),
     });
   } catch (error) {
-    // Fail silently in production, but log in dev for debugging
-    if (typeof console !== 'undefined' && console.warn) {
+    // Only show warning if not silenced
+    if (!SILENT_ON_ERROR && typeof console !== 'undefined' && console.warn) {
       console.warn('[Console Forward] Failed to send logs:', error.message);
     }
   }

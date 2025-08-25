@@ -70,6 +70,7 @@ The `consoleForwardPlugin` accepts an options object with the following properti
 | `levels`          | `string[]`                       | `["log", "warn", "error", "info", "debug"]` | Console levels to forward                          |
 | `injectPatterns`  | `string[]`                       | `undefined`                                 | File patterns to auto-inject console forwarding   |
 | `moduleExtractor` | `(id: string) => string`         | Built-in path parser                        | Custom function to extract module names from paths |
+| `silentOnError`   | `boolean`                        | `true`                                      | Don't show console warnings when server is down   |
 
 ## Browser Extensions
 
@@ -102,6 +103,16 @@ This will show logs like `[background] User logged in` or `[content] Page loaded
 4. **Server-side**: A middleware endpoint receives the logs and outputs them using Vite's logger with module prefixes
 5. **Formatting**: Logs maintain their original formatting and include stack traces for errors
 6. **Error handling**: Network failures are handled gracefully without breaking your application
+
+## Simple Error Handling
+
+The plugin includes simple, robust error handling for when the development server is unavailable:
+
+- **Silent failures**: By default, connection errors are silent to avoid console noise (set `silentOnError: false` to see errors)
+- **Graceful degradation**: Failed requests are simply ignored, your application continues normally
+- **No retry complexity**: Keeps the implementation simple and predictable
+
+This ensures your application continues to work normally even when the dev server is down, without generating `ERR_CONNECTION_REFUSED` errors in the browser console.
 
 ## License
 
