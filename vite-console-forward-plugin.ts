@@ -1,6 +1,7 @@
 import { createLogger } from "vite";
-import type { Plugin } from "vite";
-import type { IncomingMessage, ServerResponse } from "http";
+import type { Plugin, ViteDevServer, ResolvedConfig } from "vite";
+import type { IncomingMessage } from "http";
+import assert from "assert";
 
 interface LogEntry {
   level: string;
@@ -10,6 +11,7 @@ interface LogEntry {
   userAgent?: string;
   stacks?: string[];
   extra?: any;
+  module?: string;
 }
 
 interface ClientLogRequest {
@@ -29,63 +31,125 @@ export interface ConsoleForwardOptions {
    * Console levels to forward (default: ['log', 'warn', 'error', 'info', 'debug'])
    */
   levels?: ("log" | "warn" | "error" | "info" | "debug")[];
+  /**
+   * Auto-inject into specific file patterns (for extensions)
+   */
+  injectPatterns?: string[];
+  /**
+   * Custom function to extract module name from file path
+   */
+  moduleExtractor?: (filePath: string) => string;
 }
 
-const logger = createLogger("info", {
-  prefix: "[browser]",
-});
+// Default module extractor
+function defaultModuleExtractor(id: string): string {
+  const parts = id.split('/');
+  
+  // Try to find meaningful directory structure
+  const srcIndex = parts.findIndex(part => part === 'src');
+  if (srcIndex >= 0 && srcIndex < parts.length - 2) {
+    // Use the directory after src
+    return parts[srcIndex + 1];
+  }
+  
+  // Fall back to parent directory name
+  const parentDir = parts[parts.length - 2];
+  if (parentDir && parentDir !== '.' && parentDir !== '..') {
+    return parentDir;
+  }
+  
+  // Final fallback to filename without extension
+  const filename = parts[parts.length - 1];
+  return filename ? filename.split('.')[0] : 'unknown';
+}
 
 export function consoleForwardPlugin(
-  options: ConsoleForwardOptions = {},
+  options: ConsoleForwardOptions = {}
 ): Plugin {
   const {
     enabled = true,
     endpoint = "/api/debug/client-logs",
     levels = ["log", "warn", "error", "info", "debug"],
+    injectPatterns = [],
+    moduleExtractor = defaultModuleExtractor,
   } = options;
 
-  const virtualModuleId = "virtual:console-forward";
-  const resolvedVirtualModuleId = "\0" + virtualModuleId;
+  // Virtual modules
+  const configModuleId = "virtual:console-forward-config";
+  const forwardModuleId = "virtual:console-forward";
+  const resolvedConfigModuleId = "\0" + configModuleId;
+  const resolvedForwardModuleId = "\0" + forwardModuleId;
+
+  let devServerUrl = "";
+  let server: ViteDevServer | null = null;
+  let resolvedConfig: ResolvedConfig;
+  
+  // Dynamic logger cache
+  const loggerCache = new Map<string, ReturnType<typeof createLogger>>();
+  
+  function getOrCreateLogger(moduleName: string) {
+    if (!loggerCache.has(moduleName)) {
+      loggerCache.set(moduleName, createLogger("info", { 
+        prefix: `[${moduleName}]` 
+      }));
+    }
+    return loggerCache.get(moduleName)!;
+  }
 
   return {
     name: "console-forward",
 
+    configResolved(config) {
+      resolvedConfig = config;
+    },
+
     resolveId(id) {
-      if (id === virtualModuleId) {
-        return resolvedVirtualModuleId;
+      if (id === configModuleId) {
+        return resolvedConfigModuleId;
+      }
+      if (id === forwardModuleId) {
+        return resolvedForwardModuleId;
       }
     },
 
-    transformIndexHtml: {
-      order: "pre",
-      handler(html) {
-        if (!enabled) {
-          return html;
-        }
-
-        // Check if the virtual module is already imported
-        if (html.includes("virtual:console-forward")) {
-          return html;
-        }
-
-        // Inject the import script in the head section
-        return html.replace(
-          /<head[^>]*>/i,
-          (match) =>
-            `${match}\n    <script type="module">import "virtual:console-forward";</script>`,
-        );
-      },
-    },
-
     load(id) {
-      if (id === resolvedVirtualModuleId) {
+      if (id === resolvedConfigModuleId) {
+        if (!enabled) {
+          return "export const DEV_SERVER_ENDPOINT = '';";
+        }
+
+        // Use the resolved Vite config to determine server URL
+        const serverConfig = resolvedConfig.server || {};
+        const host = serverConfig.host || "localhost";
+        const port = serverConfig.port || 5173;
+        const protocol = serverConfig.https ? "https" : "http";
+
+        // Handle special host values for client-side connections
+        let actualHost = host;
+        if (host === true || host === "0.0.0.0") {
+          actualHost = "localhost";
+        }
+
+        const serverUrl = `${protocol}://${actualHost}:${port}`;
+        return `export const DEV_SERVER_ENDPOINT = '${serverUrl}';`;
+      }
+
+      if (id === resolvedForwardModuleId) {
         if (!enabled) {
           return "export default {};";
         }
 
-        // Create the console forwarding code
         return `
-// Console forwarding module
+import { DEV_SERVER_ENDPOINT } from '${configModuleId}';
+
+// Module context tracking
+let currentModuleContext = 'unknown';
+
+export function setModuleContext(context) {
+  currentModuleContext = context;
+}
+
+// Console forwarding implementation
 const originalMethods = {
   log: console.log.bind(console),
   warn: console.warn.bind(console),
@@ -102,7 +166,7 @@ const MAX_BUFFER_SIZE = 50;
 function createLogEntry(level, args) {
   const stacks = [];
   const extra = [];
-  
+
   const message = args.map((arg) => {
     if (arg === undefined) return "undefined";
     if (typeof arg === "string") return arg;
@@ -129,13 +193,14 @@ function createLogEntry(level, args) {
     }
     return String(arg);
   }).join(" ");
-  
+
   return {
     level,
     message,
     timestamp: new Date(),
-    url: window.location.href,
-    userAgent: navigator.userAgent,
+    url: typeof window !== 'undefined' ? window.location?.href : 'extension-context',
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'extension-context',
+    module: currentModuleContext,
     stacks,
     extra,
   };
@@ -143,13 +208,18 @@ function createLogEntry(level, args) {
 
 async function sendLogs(logs) {
   try {
-    await fetch("${endpoint}", {
+    const apiUrl = DEV_SERVER_ENDPOINT + '${endpoint}';
+
+    await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ logs }),
     });
   } catch (error) {
-    // Fail silently in production
+    // Fail silently in production, but log in dev for debugging
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[Console Forward] Failed to send logs:', error.message);
+    }
   }
 }
 
@@ -183,19 +253,62 @@ console.${level} = function(...args) {
   originalMethods.${level}(...args);
   const entry = createLogEntry("${level}", args);
   addToBuffer(entry);
-};`,
+};`
   )
   .join("")}
 
 // Cleanup handlers
-window.addEventListener("beforeunload", flushLogs);
+if (typeof window !== 'undefined') {
+  window.addEventListener("beforeunload", flushLogs);
+}
 setInterval(flushLogs, 10000);
 
 export default { flushLogs };
         `;
       }
     },
-    configureServer(server) {
+
+    transform(code, id) {
+      // Skip if not enabled or no inject patterns
+      if (!enabled || injectPatterns.length === 0) {
+        return;
+      }
+
+      // Check if this file should have console forwarding injected
+      const shouldInject = injectPatterns.some((pattern) =>
+        id.includes(pattern)
+      );
+
+      if (shouldInject) {
+        // Extract module context from file path
+        const moduleContext = moduleExtractor(id);
+        
+        // Inject module context setter and import at the top of the file
+        return `import { setModuleContext } from '${forwardModuleId}';\n` +
+               `setModuleContext('${moduleContext}');\n` +
+               `import '${forwardModuleId}';\n${code}`;
+      }
+    },
+
+    // Note: transformIndexHtml disabled for browser extensions to avoid CSP issues
+    // The transform hook handles script injection directly into JS/TS files
+    configureServer(viteServer) {
+      server = viteServer;
+      assert(server, "server is not defined");
+
+      // Set up URL discovery after server starts
+      const { httpServer } = server;
+      if (httpServer) {
+        httpServer.once("listening", async () => {
+          assert(server, "server is not defined");
+          const urls = server.resolvedUrls;
+          devServerUrl =
+            urls?.local?.[0] ||
+            `http://localhost:${(httpServer.address() as any)?.port || 5173}`;
+          server!.config.logger.info(`Console forwarding dev server URL: ${devServerUrl}`);
+        });
+      }
+
       // Add API endpoint to handle forwarded console logs
       server.middlewares.use(endpoint, (req, res, next) => {
         const request = req as IncomingMessage & { method?: string };
@@ -204,7 +317,7 @@ export default { flushLogs };
         }
 
         let body = "";
-        request.setEncoding!("utf8");
+        request.setEncoding("utf8");
 
         request.on("data", (chunk: string) => {
           body += chunk;
@@ -214,8 +327,9 @@ export default { flushLogs };
           try {
             const { logs }: ClientLogRequest = JSON.parse(body);
 
-            // Forward each log to the Vite dev server console using Vite's logger
+            // Forward each log to the Vite dev server console using dynamic loggers
             logs.forEach((log) => {
+              const logger = getOrCreateLogger(log.module || 'unknown');
               const location = log.url ? ` (${log.url})` : "";
               let message = `[${log.level}] ${log.message}${location}`;
 
@@ -228,7 +342,7 @@ export default { flushLogs };
                       stack
                         .split("\n")
                         .map((line) => `    ${line}`)
-                        .join("\n"),
+                        .join("\n")
                     )
                     .join("\n");
               }
@@ -243,16 +357,17 @@ export default { flushLogs };
                     .join("\n");
               }
 
-              // Use Vite's logger for consistent formatting
+              // Use the appropriate logger for consistent formatting
               const logOptions = { timestamp: true };
               switch (log.level) {
-                case "error":
+                case "error": {
                   const error =
                     log.stacks && log.stacks.length > 0
                       ? new Error(log.stacks.join("\n"))
                       : null;
                   logger.error(message, { ...logOptions, error });
                   break;
+                }
                 case "warn":
                   logger.warn(message, logOptions);
                   break;
@@ -270,6 +385,7 @@ export default { flushLogs };
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ success: true }));
           } catch (error) {
+            assert(server, "server is not defined");
             server.config.logger.error("Error processing client logs:", {
               timestamp: true,
               error: error as Error,
