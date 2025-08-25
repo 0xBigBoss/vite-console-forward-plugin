@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/0xBigBoss/vite-console-forward-plugin"
+    "url": "git+https://github.com/0xBigBoss/vite-console-forward-plugin.git"
   },
   "devDependencies": {
     "@playwright/test": "^1.53.1",
