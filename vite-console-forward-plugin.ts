@@ -387,6 +387,11 @@ export default { flushLogs };
         return;
       }
 
+      // Skip HTML files - they are handled by transformIndexHtml
+      if (id.endsWith('.html')) {
+        return;
+      }
+
       // First check if file should be excluded
       if (
         excludePatterns.length > 0 &&
@@ -399,10 +404,15 @@ export default { flushLogs };
       const shouldInject = micromatch.isMatch(id, injectPatterns);
 
       if (shouldInject) {
+        // Check if console forwarding is already injected to prevent double injection
+        if (code.includes(forwardModuleId)) {
+          return;
+        }
+
         // Extract module context from file path
         const moduleContext = moduleExtractor(id);
 
-        // Inject module context setter and import at the top of the file
+        // For JS/TS files, inject imports at the top
         return (
           `import { setModuleContext } from '${forwardModuleId}';\n` +
           `setModuleContext('${moduleContext}');\n` +
@@ -411,8 +421,58 @@ export default { flushLogs };
       }
     },
 
-    // Note: transformIndexHtml disabled for browser extensions to avoid CSP issues
-    // The transform hook handles script injection directly into JS/TS files
+    // Handle HTML file transformation
+    transformIndexHtml(html, ctx) {
+      // Skip if not enabled or no inject patterns
+      if (!enabled || injectPatterns.length === 0) {
+        return;
+      }
+
+      const id = ctx.filename;
+
+      // First check if file should be excluded
+      if (
+        excludePatterns.length > 0 &&
+        micromatch.isMatch(id, excludePatterns)
+      ) {
+        return;
+      }
+
+      // Check if this file matches injection patterns
+      const shouldInject = micromatch.isMatch(id, injectPatterns);
+
+      if (shouldInject) {
+        // Check if console forwarding is already injected to prevent double injection
+        if (html.includes(forwardModuleId)) {
+          return;
+        }
+
+        // Extract module context from file path
+        const moduleContext = moduleExtractor(id);
+
+        // Inject a script tag as early as possible to capture all logs
+        const scriptTag = `<script type="module">
+import { setModuleContext } from '${forwardModuleId}';
+setModuleContext('${moduleContext}');
+import '${forwardModuleId}';
+</script>`;
+        
+        // Try to inject after opening head tag (earliest safe position)
+        if (html.includes('<head>')) {
+          return html.replace('<head>', `<head>\n${scriptTag}`);
+        } else if (html.includes('<body>')) {
+          // Fallback: inject at the beginning of body
+          return html.replace('<body>', `<body>\n${scriptTag}`);
+        } else if (html.includes('<html>')) {
+          // Fallback: inject right after html tag
+          return html.replace('<html>', `<html>\n${scriptTag}`);
+        } else {
+          // Last resort: prepend at the beginning
+          return scriptTag + '\n' + html;
+        }
+      }
+    },
+
     configureServer(viteServer) {
       server = viteServer;
       assert(server, "server is not defined");
