@@ -1,6 +1,6 @@
 {
   "name": "@0xbigboss/vite-console-forward-plugin",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "A Vite plugin that forwards browser console logs to the Vite dev server console",
   "main": "dist/vite-console-forward-plugin.js",
   "types": "dist/vite-console-forward-plugin.d.ts",
