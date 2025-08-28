@@ -443,7 +443,7 @@ export default { flushLogs };
 
       if (shouldInject) {
         // Check if console forwarding is already injected to prevent double injection
-        if (html.includes(forwardModuleId)) {
+        if (html.includes(forwardModuleId) || html.includes('__x00__' + forwardModuleId)) {
           return;
         }
 
@@ -451,10 +451,13 @@ export default { flushLogs };
         const moduleContext = moduleExtractor(id);
 
         // Inject a script tag as early as possible to capture all logs
+        // Use /@id/__x00__ prefix for virtual modules in HTML context (Vite's encoding for \0)
+        const resolvedForwardId = `/@id/__x00__${forwardModuleId}`;
+        
         const scriptTag = `<script type="module">
-import { setModuleContext } from '${forwardModuleId}';
+import { setModuleContext } from '${resolvedForwardId}';
 setModuleContext('${moduleContext}');
-import '${forwardModuleId}';
+import '${resolvedForwardId}';
 </script>`;
         
         // Try to inject after opening head tag (earliest safe position)
