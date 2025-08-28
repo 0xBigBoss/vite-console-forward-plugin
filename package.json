@@ -1,6 +1,6 @@
 {
   "name": "@0xbigboss/vite-console-forward-plugin",
-  "version": "2.0.3",
+  "version": "2.1.0",
   "description": "A Vite plugin that forwards browser console logs to the Vite dev server console",
   "main": "dist/vite-console-forward-plugin.js",
   "types": "dist/vite-console-forward-plugin.d.ts",
@@ -13,7 +13,12 @@
     "build": "tsc",
     "prepublishOnly": "npm run build",
     "dev": "vite",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report"
   },
   "keywords": [
     "vite",
@@ -31,11 +36,15 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.53.1",
+    "@types/micromatch": "^4.0.9",
     "@types/node": "^24.0.7",
     "playwright": "^1.53.1",
     "typescript": "^5.0.0"
   },
   "peerDependencies": {
     "vite": "^7.0.0"
+  },
+  "dependencies": {
+    "micromatch": "^4.0.8"
   }
 }

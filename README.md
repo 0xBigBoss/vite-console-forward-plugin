@@ -22,6 +22,7 @@ Since this is a single-file plugin, you can copy `vite-console-forward-plugin.ts
 
 Add the plugin to your `vite.config.ts`:
 
+### Basic Setup (Web Applications)
 ```typescript
 import { defineConfig } from "vite";
 import { consoleForwardPlugin } from "./vite-console-forward-plugin";
@@ -29,31 +30,44 @@ import { consoleForwardPlugin } from "./vite-console-forward-plugin";
 export default defineConfig({
   plugins: [
     consoleForwardPlugin({
-      // Enable console forwarding (default: true in dev mode)
-      enabled: true,
+      // Default configuration works for most web apps
+      // Automatically injects into all HTML files
+    }),
+  ],
+});
+```
 
-      // Custom API endpoint (default: '/api/debug/client-logs')
-      endpoint: "/api/debug/client-logs",
+### Advanced Setup (Custom Configuration)
+```typescript
+import { defineConfig } from "vite";
+import { consoleForwardPlugin } from "./vite-console-forward-plugin";
 
-      // Which console levels to forward (default: all)
-      levels: ["log", "warn", "error", "info", "debug"],
-
-      // Auto-inject into specific files (useful for browser extensions)
+export default defineConfig({
+  plugins: [
+    consoleForwardPlugin({
+      // Include JavaScript/TypeScript files directly
       injectPatterns: [
-        "/entries/background/index.ts",
-        "/entries/content/index.ts",
-        "/entries/popup/index.tsx",
-        "/entries/inpage/index.ts",
+        "**/*.{js,jsx,ts,tsx,html}"
+      ],
+      
+      // Exclude test files and specific directories
+      excludePatterns: [
+        "**/node_modules/**",
+        "**/*.test.{js,ts}",
+        "**/dist/**"
       ],
 
-      // Custom module name extraction from file paths
+      // Custom module name extraction
       moduleExtractor: (id: string) => {
-        if (id.includes("/entries/background/")) return "background";
-        if (id.includes("/entries/content/")) return "content";
-        if (id.includes("/entries/popup/")) return "popup";
-        if (id.includes("/entries/inpage/")) return "inpage";
-        return "extension";
+        // Extract meaningful module names from file paths
+        if (id.includes("/components/")) return "component";
+        if (id.includes("/utils/")) return "utils";
+        if (id.includes("/api/")) return "api";
+        return "app";
       },
+      
+      // Forward errors and promise rejections
+      forwardErrors: true,
     }),
   ],
 });
@@ -68,32 +82,82 @@ The `consoleForwardPlugin` accepts an options object with the following properti
 | `enabled`         | `boolean`                        | `true`                                      | Whether to enable console forwarding               |
 | `endpoint`        | `string`                         | `"/api/debug/client-logs"`                  | API endpoint path for receiving logs               |
 | `levels`          | `string[]`                       | `["log", "warn", "error", "info", "debug"]` | Console levels to forward                          |
-| `injectPatterns`  | `string[]`                       | `undefined`                                 | File patterns to auto-inject console forwarding   |
+| `injectPatterns`  | `string[]`                       | `["**/*.html"]`                             | Glob patterns for files to inject console forwarding |
+| `excludePatterns` | `string[]`                       | `["**/node_modules/**"]`                    | Glob patterns for files to exclude from injection |
 | `moduleExtractor` | `(id: string) => string`         | Built-in path parser                        | Custom function to extract module names from paths |
 | `silentOnError`   | `boolean`                        | `true`                                      | Don't show console warnings when server is down   |
+| `forwardErrors`   | `boolean`                        | `true`                                      | Forward uncaught errors and promise rejections    |
+
+## Pattern Matching with Glob
+
+The plugin uses [micromatch](https://github.com/micromatch/micromatch) for powerful glob pattern matching:
+
+### Default Behavior
+By default, the plugin only injects into HTML files (`["**/*.html"]`). This is perfect for standard web applications where all JavaScript is loaded through HTML pages.
+
+### Custom Patterns
+You can customize which files receive console forwarding using glob patterns:
+
+```typescript
+consoleForwardPlugin({
+  // Include all JavaScript and TypeScript files
+  injectPatterns: ["**/*.{js,jsx,ts,tsx}"],
+  
+  // Exclude test files and node_modules
+  excludePatterns: ["**/node_modules/**", "**/*.test.{js,ts}", "**/*.spec.{js,ts}"]
+})
+```
+
+### Common Pattern Examples
+- `"**/*.js"` - All JavaScript files
+- `"src/**/*.{ts,tsx}"` - TypeScript files in src directory
+- `"!**/*.min.js"` - Exclude minified files
+- `"**/components/**/*.jsx"` - JSX files in any components directory
 
 ## Browser Extensions
 
-For browser extension development, use `injectPatterns` to target specific entry points:
+For browser extension development, you'll need to specify your extension's entry points since they don't run through HTML files:
 
 ```typescript
 consoleForwardPlugin({
   enabled: isDev,
+  // Target specific extension entry points
   injectPatterns: [
-    "/entries/background/index.ts",
-    "/entries/content/index.ts", 
-    "/entries/popup/index.tsx",
+    "**/entries/background/**/*.{ts,js}",
+    "**/entries/content/**/*.{ts,js}", 
+    "**/entries/popup/**/*.{tsx,jsx}",
+    "**/entries/options/**/*.{tsx,jsx}",
   ],
+  // Custom module extraction for cleaner logs
   moduleExtractor: (id) => {
     if (id.includes("/background/")) return "background";
     if (id.includes("/content/")) return "content"; 
     if (id.includes("/popup/")) return "popup";
+    if (id.includes("/options/")) return "options";
     return "extension";
   },
 })
 ```
 
 This will show logs like `[background] User logged in` or `[content] Page loaded`, making it easy to track which part of your extension is generating each log.
+
+### Web Workers and Service Workers
+For applications using workers, add their scripts to the patterns:
+
+```typescript
+consoleForwardPlugin({
+  injectPatterns: [
+    "**/*.html",
+    "**/workers/**/*.js",
+    "**/service-worker.js"
+  ],
+  moduleExtractor: (id) => {
+    if (id.includes("service-worker")) return "service-worker";
+    if (id.includes("/workers/")) return "worker";
+    return defaultModuleExtractor(id);
+  }
+})
+```
 
 ## How it works
 

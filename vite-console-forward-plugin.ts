@@ -2,6 +2,7 @@ import { createLogger } from "vite";
 import type { Plugin, ViteDevServer, ResolvedConfig } from "vite";
 import type { IncomingMessage } from "http";
 import assert from "assert";
+import micromatch from "micromatch";
 
 interface LogEntry {
   level: string;
@@ -32,9 +33,17 @@ export interface ConsoleForwardOptions {
    */
   levels?: ("log" | "warn" | "error" | "info" | "debug")[];
   /**
-   * Auto-inject into specific file patterns (for extensions)
+   * Glob patterns to match files for injection
+   * Default: HTML files only
+   * Set to empty array to disable automatic injection
    */
   injectPatterns?: string[];
+  /**
+   * Glob patterns to exclude from injection
+   * Default: node_modules directory
+   * Takes precedence over injectPatterns
+   */
+  excludePatterns?: string[];
   /**
    * Custom function to extract module name from file path
    */
@@ -43,28 +52,32 @@ export interface ConsoleForwardOptions {
    * Silent on error - don't show console warnings when server is down (default: true)
    */
   silentOnError?: boolean;
+  /**
+   * Enable forwarding of unhandled errors and promise rejections (default: true)
+   */
+  forwardErrors?: boolean;
 }
 
 // Default module extractor
 function defaultModuleExtractor(id: string): string {
-  const parts = id.split('/');
-  
+  const parts = id.split("/");
+
   // Try to find meaningful directory structure
-  const srcIndex = parts.findIndex(part => part === 'src');
+  const srcIndex = parts.findIndex((part) => part === "src");
   if (srcIndex >= 0 && srcIndex < parts.length - 2) {
     // Use the directory after src
     return parts[srcIndex + 1];
   }
-  
+
   // Fall back to parent directory name
   const parentDir = parts[parts.length - 2];
-  if (parentDir && parentDir !== '.' && parentDir !== '..') {
+  if (parentDir && parentDir !== "." && parentDir !== "..") {
     return parentDir;
   }
-  
+
   // Final fallback to filename without extension
   const filename = parts[parts.length - 1];
-  return filename ? filename.split('.')[0] : 'unknown';
+  return filename ? filename.split(".")[0] : "unknown";
 }
 
 export function consoleForwardPlugin(
@@ -74,9 +87,11 @@ export function consoleForwardPlugin(
     enabled = true,
     endpoint = "/api/debug/client-logs",
     levels = ["log", "warn", "error", "info", "debug"],
-    injectPatterns = [],
+    injectPatterns = ["**/*.html"],
+    excludePatterns = ["**/node_modules/**"],
     moduleExtractor = defaultModuleExtractor,
     silentOnError = true,
+    forwardErrors = true,
   } = options;
 
   // Virtual modules
@@ -88,15 +103,18 @@ export function consoleForwardPlugin(
   let devServerUrl = "";
   let server: ViteDevServer | null = null;
   let resolvedConfig: ResolvedConfig;
-  
+
   // Dynamic logger cache
   const loggerCache = new Map<string, ReturnType<typeof createLogger>>();
-  
+
   function getOrCreateLogger(moduleName: string) {
     if (!loggerCache.has(moduleName)) {
-      loggerCache.set(moduleName, createLogger("info", { 
-        prefix: `[${moduleName}]` 
-      }));
+      loggerCache.set(
+        moduleName,
+        createLogger("info", {
+          prefix: `[${moduleName}]`,
+        })
+      );
     }
     return loggerCache.get(moduleName)!;
   }
@@ -263,6 +281,95 @@ console.${level} = function(...args) {
   )
   .join("")}
 
+// Error forwarding handlers
+${
+  forwardErrors
+    ? `
+// Detect execution context
+const isWorker = typeof self !== 'undefined' && typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope;
+const isServiceWorker = typeof self !== 'undefined' && typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope;
+const hasWindow = typeof window !== 'undefined';
+
+// Function to format error details
+function formatErrorDetails(error) {
+  const details = {
+    message: error.message || String(error),
+    stack: error.stack || '',
+    filename: error.filename || '',
+    lineno: error.lineno || 0,
+    colno: error.colno || 0,
+  };
+
+  // Extract more details if available
+  if (error.error && typeof error.error === 'object') {
+    details.message = error.error.message || details.message;
+    details.stack = error.error.stack || details.stack;
+  }
+
+  return details;
+}
+
+// Handle unhandled promise rejections
+function handleUnhandledRejection(event) {
+  const errorDetails = event.reason instanceof Error
+    ? formatErrorDetails(event.reason)
+    : { message: String(event.reason), stack: '' };
+
+  const context = isServiceWorker ? 'service-worker' : (isWorker ? 'worker' : 'window');
+  originalMethods.error('[Unhandled Promise Rejection]', errorDetails.message);
+
+  const entry = createLogEntry('error', [
+    '[Unhandled Promise Rejection]',
+    errorDetails.message,
+    errorDetails.stack ? { stack: errorDetails.stack } : null
+  ].filter(Boolean));
+
+  entry.module = currentModuleContext + ':' + context;
+  addToBuffer(entry);
+
+  // Prevent default browser handling if in window context
+  if (hasWindow && event.preventDefault) {
+    event.preventDefault();
+  }
+}
+
+// Handle uncaught exceptions
+function handleUncaughtException(event) {
+  const errorDetails = formatErrorDetails(event);
+  const context = isServiceWorker ? 'service-worker' : (isWorker ? 'worker' : 'window');
+
+  originalMethods.error('[Uncaught Exception]', errorDetails.message);
+
+  const entry = createLogEntry('error', [
+    '[Uncaught Exception]',
+    errorDetails.message,
+    errorDetails.stack ? { stack: errorDetails.stack } : null,
+    errorDetails.filename ? 'at ' + errorDetails.filename + ':' + errorDetails.lineno + ':' + errorDetails.colno : null
+  ].filter(Boolean));
+
+  entry.module = currentModuleContext + ':' + context;
+  addToBuffer(entry);
+
+  // Prevent default browser error handling if in window context
+  if (hasWindow && event.preventDefault) {
+    event.preventDefault();
+  }
+}
+
+// Register error handlers based on context
+if (hasWindow) {
+  // Window context
+  window.addEventListener('unhandledrejection', handleUnhandledRejection);
+  window.addEventListener('error', handleUncaughtException);
+} else if (isWorker || isServiceWorker) {
+  // Worker/Service Worker context
+  self.addEventListener('unhandledrejection', handleUnhandledRejection);
+  self.addEventListener('error', handleUncaughtException);
+}
+`
+    : ""
+}
+
 // Cleanup handlers
 if (typeof window !== 'undefined') {
   window.addEventListener("beforeunload", flushLogs);
@@ -280,19 +387,27 @@ export default { flushLogs };
         return;
       }
 
-      // Check if this file should have console forwarding injected
-      const shouldInject = injectPatterns.some((pattern) =>
-        id.includes(pattern)
-      );
+      // First check if file should be excluded
+      if (
+        excludePatterns.length > 0 &&
+        micromatch.isMatch(id, excludePatterns)
+      ) {
+        return;
+      }
+
+      // Check if this file matches injection patterns
+      const shouldInject = micromatch.isMatch(id, injectPatterns);
 
       if (shouldInject) {
         // Extract module context from file path
         const moduleContext = moduleExtractor(id);
-        
+
         // Inject module context setter and import at the top of the file
-        return `import { setModuleContext } from '${forwardModuleId}';\n` +
-               `setModuleContext('${moduleContext}');\n` +
-               `import '${forwardModuleId}';\n${code}`;
+        return (
+          `import { setModuleContext } from '${forwardModuleId}';\n` +
+          `setModuleContext('${moduleContext}');\n` +
+          `import '${forwardModuleId}';\n${code}`
+        );
       }
     },
 
@@ -311,7 +426,9 @@ export default { flushLogs };
           devServerUrl =
             urls?.local?.[0] ||
             `http://localhost:${(httpServer.address() as any)?.port || 5173}`;
-          server!.config.logger.info(`Console forwarding dev server URL: ${devServerUrl}`);
+          server!.config.logger.info(
+            `Console forwarding dev server URL: ${devServerUrl}`
+          );
         });
       }
 
@@ -335,7 +452,7 @@ export default { flushLogs };
 
             // Forward each log to the Vite dev server console using dynamic loggers
             logs.forEach((log) => {
-              const logger = getOrCreateLogger(log.module || 'unknown');
+              const logger = getOrCreateLogger(log.module || "unknown");
               const location = log.url ? ` (${log.url})` : "";
               let message = `[${log.level}] ${log.message}${location}`;
 
