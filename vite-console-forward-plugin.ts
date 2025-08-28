@@ -318,11 +318,15 @@ function handleUnhandledRejection(event) {
   const context = isServiceWorker ? 'service-worker' : (isWorker ? 'worker' : 'window');
   originalMethods.error('[Unhandled Promise Rejection]', errorDetails.message);
 
+  // Create a proper Error object for better logging
+  const errorObj = event.reason instanceof Error 
+    ? event.reason 
+    : new Error(errorDetails.message);
+  
   const entry = createLogEntry('error', [
     '[Unhandled Promise Rejection]',
-    errorDetails.message,
-    errorDetails.stack ? { stack: errorDetails.stack } : null
-  ].filter(Boolean));
+    errorObj
+  ]);
 
   entry.module = currentModuleContext + ':' + context;
   addToBuffer(entry);
@@ -340,10 +344,15 @@ function handleUncaughtException(event) {
 
   originalMethods.error('[Uncaught Exception]', errorDetails.message);
 
+  // Create a proper Error object for better logging
+  const errorObj = new Error(errorDetails.message);
+  if (errorDetails.stack) {
+    errorObj.stack = errorDetails.stack;
+  }
+  
   const entry = createLogEntry('error', [
     '[Uncaught Exception]',
-    errorDetails.message,
-    errorDetails.stack ? { stack: errorDetails.stack } : null,
+    errorObj,
     errorDetails.filename ? 'at ' + errorDetails.filename + ':' + errorDetails.lineno + ':' + errorDetails.colno : null
   ].filter(Boolean));
 
