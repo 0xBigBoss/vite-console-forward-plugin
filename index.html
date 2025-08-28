@@ -1,37 +1,741 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Console Forward Plugin Test</title>
-  </head>
-  <body>
-    <h1>Console Forward Plugin Test</h1>
-    <p>This is the index.html file to test transformIndexHtml</p>
-
-    <button onclick="testLog()">Test Console Log</button>
-
-    <script type="module">
-      function fail() {
-        throw new Error("Test error from index.html");
+    <title>Console Forward Plugin Test Suite</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
 
-      function testLog() {
-        console.log("Test log from index.html");
-        try {
-          fail();
-        } catch (e) {
-          console.error("Test error from index.html", e);
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 2rem;
+        color: #333;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        border-radius: 20px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+      }
+
+      header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+      }
+
+      .subtitle {
+        font-size: 1.1rem;
+        opacity: 0.9;
+      }
+
+      .test-sections {
+        padding: 2rem;
+        display: grid;
+        gap: 2rem;
+      }
+
+      .test-section {
+        background: #f8f9fa;
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 2px solid #e9ecef;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+
+      .test-section:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+      }
+
+      h2 {
+        color: #495057;
+        margin-bottom: 1rem;
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      h2::before {
+        content: "🧪";
+        font-size: 1.2em;
+      }
+
+      .button-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+      }
+
+      button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.3s;
+        box-shadow: 0 4px 8px rgba(102, 126, 234, 0.25);
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(102, 126, 234, 0.35);
+      }
+
+      button:active {
+        transform: translateY(0);
+      }
+
+      .danger {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      }
+
+      .warning {
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+      }
+
+      .info {
+        background: linear-gradient(135deg, #30cfd0 0%, #330867 100%);
+      }
+
+      .success {
+        background: linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%);
+      }
+
+      .output-section {
+        margin-top: 2rem;
+        padding: 1.5rem;
+        background: #212529;
+        border-radius: 12px;
+        color: #f8f9fa;
+      }
+
+      .output-section h3 {
+        color: #92fe9d;
+        margin-bottom: 1rem;
+        font-family: "Monaco", "Menlo", monospace;
+      }
+
+      .log-entry {
+        font-family: "Monaco", "Menlo", monospace;
+        padding: 0.5rem;
+        margin: 0.25rem 0;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.05);
+        border-left: 4px solid;
+        font-size: 0.9rem;
+        word-break: break-all;
+      }
+
+      .log-entry.log {
+        border-color: #92fe9d;
+      }
+
+      .log-entry.warn {
+        border-color: #fee140;
+      }
+
+      .log-entry.error {
+        border-color: #f5576c;
+      }
+
+      .log-entry.info {
+        border-color: #30cfd0;
+      }
+
+      .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: bold;
+        margin-left: 1rem;
+      }
+
+      .status-active {
+        background: #92fe9d;
+        color: #212529;
+      }
+
+      .status-inactive {
+        background: #f5576c;
+        color: white;
+      }
+
+      .test-controls {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+      }
+
+      .control-button {
+        background: #495057;
+        padding: 0.5rem 1rem;
+        font-size: 0.9rem;
+      }
+
+      #localOutput {
+        max-height: 400px;
+        overflow-y: auto;
+        padding: 1rem;
+        background: rgba(0, 0, 0, 0.5);
+        border-radius: 8px;
+      }
+
+      .test-description {
+        color: #6c757d;
+        font-size: 0.9rem;
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background: white;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.6;
+        }
+        100% {
+          opacity: 1;
         }
       }
 
-      // Make testLog available globally
-      window.testLog = testLog;
+      .testing {
+        animation: pulse 2s infinite;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>🚀 Console Forward Plugin Test Suite</h1>
+        <p class="subtitle">Version 2.1.0 - Error Forwarding Edition</p>
+        <span class="status-badge status-active" id="pluginStatus"
+          >Plugin Active</span
+        >
+      </header>
+
+      <div class="test-sections">
+        <div class="test-controls">
+          <button class="control-button" onclick="clearLocalOutput()">
+            Clear Output
+          </button>
+          <button class="control-button" onclick="runAllTests()">
+            Run All Tests
+          </button>
+          <button class="control-button" onclick="toggleLogging()">
+            Toggle Local Logging
+          </button>
+        </div>
+
+        <div class="test-section">
+          <h2>Console Logging Tests</h2>
+          <p class="test-description">
+            Test standard console methods. All messages should appear in your
+            terminal with proper formatting and module context.
+          </p>
+          <div class="button-grid">
+            <button onclick="testConsoleLog()">console.log()</button>
+            <button class="warning" onclick="testConsoleWarn()">
+              console.warn()
+            </button>
+            <button class="danger" onclick="testConsoleError()">
+              console.error()
+            </button>
+            <button class="info" onclick="testConsoleInfo()">
+              console.info()
+            </button>
+            <button onclick="testConsoleDebug()">console.debug()</button>
+            <button class="success" onclick="testConsoleTrace()">
+              console.trace()
+            </button>
+          </div>
+        </div>
+
+        <div class="test-section">
+          <h2>Error Forwarding Tests</h2>
+          <p class="test-description">
+            Test error forwarding capabilities. Uncaught errors and promise
+            rejections should appear in your terminal with stack traces.
+          </p>
+          <div class="button-grid">
+            <button class="danger" onclick="throwUncaughtError()">
+              Throw Uncaught Error
+            </button>
+            <button class="danger" onclick="throwTypeError()">
+              Throw TypeError
+            </button>
+            <button class="danger" onclick="throwRangeError()">
+              Throw RangeError
+            </button>
+            <button class="danger" onclick="throwReferenceError()">
+              Throw ReferenceError
+            </button>
+            <button class="warning" onclick="triggerPromiseRejection()">
+              Promise Rejection
+            </button>
+            <button class="warning" onclick="triggerAsyncError()">
+              Async Error
+            </button>
+          </div>
+        </div>
+
+        <div class="test-section">
+          <h2>Complex Scenarios</h2>
+          <p class="test-description">
+            Test complex error scenarios including nested errors, multiple
+            arguments, and special object types.
+          </p>
+          <div class="button-grid">
+            <button onclick="testNestedError()">Nested Try-Catch</button>
+            <button onclick="testMultipleArgs()">Multiple Arguments</button>
+            <button onclick="testComplexObjects()">Complex Objects</button>
+            <button onclick="testCircularReference()">
+              Circular Reference
+            </button>
+            <button class="warning" onclick="testTimeoutError()">
+              Timeout Error
+            </button>
+            <button class="info" onclick="testEventError()">
+              Event Handler Error
+            </button>
+          </div>
+        </div>
+
+        <div class="test-section">
+          <h2>Module Context Tests</h2>
+          <p class="test-description">
+            Test that the module context is properly tracked. Messages should
+            show [index.html] or appropriate module name.
+          </p>
+          <div class="button-grid">
+            <button onclick="testInlineScript()">Inline Script</button>
+            <button onclick="testModuleScript()">Module Script</button>
+            <button onclick="testDynamicImport()">Dynamic Import</button>
+            <button onclick="testWorker()">Web Worker</button>
+            <button onclick="testEval()">Eval Context</button>
+            <button onclick="testFunction()">Function Constructor</button>
+          </div>
+        </div>
+
+        <div class="test-section">
+          <h2>Performance & Stress Tests</h2>
+          <p class="test-description">
+            Test plugin performance with rapid logging and large payloads.
+          </p>
+          <div class="button-grid">
+            <button onclick="testRapidLogging()">Rapid Logging (100x)</button>
+            <button onclick="testLargePayload()">Large Payload</button>
+            <button onclick="testDeepNesting()">Deep Object Nesting</button>
+            <button onclick="testManyErrors()">Many Errors (10x)</button>
+            <button class="warning" onclick="testMemoryIntensive()">
+              Memory Intensive
+            </button>
+            <button class="success" onclick="testBenchmark()">Benchmark</button>
+          </div>
+        </div>
+
+        <div class="output-section">
+          <h3>📊 Local Output Monitor</h3>
+          <div id="localOutput"></div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module">
+      // Track local logging
+      let localLogging = true;
+      const localOutput = document.getElementById("localOutput");
+      const maxLogs = 50;
+      let logCount = 0;
+
+      function addLocalLog(type, ...args) {
+        if (!localLogging) return;
+
+        const entry = document.createElement("div");
+        entry.className = `log-entry ${type}`;
+        const timestamp = new Date().toLocaleTimeString();
+        entry.textContent = `[${timestamp}] ${type.toUpperCase()}: ${args
+          .map((arg) => {
+            if (typeof arg === "object") {
+              try {
+                return JSON.stringify(arg, null, 2);
+              } catch (e) {
+                return "[Circular or Complex Object]";
+              }
+            }
+            return String(arg);
+          })
+          .join(" ")}`;
+
+        localOutput.insertBefore(entry, localOutput.firstChild);
+        logCount++;
+
+        // Keep only last N logs
+        while (localOutput.children.length > maxLogs) {
+          localOutput.removeChild(localOutput.lastChild);
+        }
+      }
+
+      // Override console methods to capture locally
+      const originalLog = console.log;
+      const originalWarn = console.warn;
+      const originalError = console.error;
+      const originalInfo = console.info;
+      const originalDebug = console.debug;
+
+      console.log = (...args) => {
+        originalLog.apply(console, args);
+        addLocalLog("log", ...args);
+      };
+
+      console.warn = (...args) => {
+        originalWarn.apply(console, args);
+        addLocalLog("warn", ...args);
+      };
+
+      console.error = (...args) => {
+        originalError.apply(console, args);
+        addLocalLog("error", ...args);
+      };
+
+      console.info = (...args) => {
+        originalInfo.apply(console, args);
+        addLocalLog("info", ...args);
+      };
+
+      console.debug = (...args) => {
+        originalDebug.apply(console, args);
+        addLocalLog("log", ...args);
+      };
+
+      // Console Logging Tests
+      window.testConsoleLog = () => {
+        console.log("✅ Standard log message from index.html", {
+          timestamp: Date.now(),
+        });
+      };
+
+      window.testConsoleWarn = () => {
+        console.warn("⚠️ Warning message from index.html", {
+          level: "warning",
+        });
+      };
+
+      window.testConsoleError = () => {
+        console.error(
+          "❌ Error message from index.html",
+          new Error("Test error object")
+        );
+      };
+
+      window.testConsoleInfo = () => {
+        console.info("ℹ️ Info message from index.html", {
+          type: "information",
+        });
+      };
+
+      window.testConsoleDebug = () => {
+        console.debug("🐛 Debug message from index.html", { debug: true });
+      };
+
+      window.testConsoleTrace = () => {
+        console.trace("📍 Trace message from index.html");
+      };
+
+      // Error Forwarding Tests
+      window.throwUncaughtError = () => {
+        throw new Error("💥 Uncaught error from button click!");
+      };
+
+      window.throwTypeError = () => {
+        const obj = null;
+        obj.nonExistentMethod(); // This will throw a TypeError
+      };
+
+      window.throwRangeError = () => {
+        const arr = new Array(-1); // This will throw a RangeError
+      };
+
+      window.throwReferenceError = () => {
+        nonExistentVariable.doSomething(); // This will throw a ReferenceError
+      };
+
+      window.triggerPromiseRejection = () => {
+        Promise.reject(new Error("🔥 Unhandled promise rejection!"));
+      };
+
+      window.triggerAsyncError = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        throw new Error("⚡ Error from async function!");
+      };
+
+      // Complex Scenarios
+      window.testNestedError = () => {
+        try {
+          try {
+            throw new Error("Inner error");
+          } catch (e) {
+            console.error("Caught inner:", e);
+            throw new Error("Outer error");
+          }
+        } catch (e) {
+          console.error("Caught outer:", e);
+        }
+      };
+
+      window.testMultipleArgs = () => {
+        console.log(
+          "Multiple",
+          "arguments",
+          123,
+          true,
+          { key: "value" },
+          ["array"],
+          null,
+          undefined
+        );
+      };
+
+      window.testComplexObjects = () => {
+        const complexObj = {
+          string: "text",
+          number: 42,
+          boolean: true,
+          array: [1, 2, 3],
+          nested: {
+            deep: {
+              deeper: {
+                deepest: "value",
+              },
+            },
+          },
+          date: new Date(),
+          regex: /test/gi,
+          func: () => "function",
+          symbol: Symbol("test"),
+        };
+        console.log("Complex object:", complexObj);
+      };
+
+      window.testCircularReference = () => {
+        const obj = { name: "circular" };
+        obj.self = obj;
+        console.log("Circular reference:", obj);
+      };
+
+      window.testTimeoutError = () => {
+        setTimeout(() => {
+          throw new Error("💣 Error from setTimeout!");
+        }, 100);
+      };
+
+      window.testEventError = () => {
+        const button = document.createElement("button");
+        button.addEventListener("click", () => {
+          throw new Error("🎯 Error from event handler!");
+        });
+        button.click();
+      };
+
+      // Module Context Tests
+      window.testInlineScript = () => {
+        console.log("Message from inline script context");
+      };
+
+      window.testModuleScript = () => {
+        console.log("Message from module script context");
+      };
+
+      window.testWorker = () => {
+        if (typeof Worker !== "undefined") {
+          try {
+            const workerCode = `
+                    console.log('Message from Web Worker');
+                    throw new Error('Error from Web Worker');
+                  `;
+            const blob = new Blob([workerCode], {
+              type: "application/javascript",
+            });
+            const worker = new Worker(URL.createObjectURL(blob));
+            worker.onerror = (e) => console.error("Worker error:", e);
+          } catch (e) {
+            console.error("Failed to create worker:", e);
+          }
+        } else {
+          console.warn("Web Workers not supported");
+        }
+      };
+
+      window.testEval = () => {
+        try {
+          eval(
+            'console.log("Message from eval context"); throw new Error("Error from eval");'
+          );
+        } catch (e) {
+          console.error("Eval error:", e);
+        }
+      };
+
+      window.testFunction = () => {
+        try {
+          const fn = new Function(
+            'console.log("Message from Function constructor"); throw new Error("Error from Function constructor");'
+          );
+          fn();
+        } catch (e) {
+          console.error("Function constructor error:", e);
+        }
+      };
+
+      // Performance Tests
+      window.testRapidLogging = () => {
+        console.log("Starting rapid logging test...");
+        const start = performance.now();
+        for (let i = 0; i < 100; i++) {
+          console.log(`Rapid log #${i + 1}`);
+        }
+        const end = performance.now();
+        console.log(`Completed 100 logs in ${(end - start).toFixed(2)}ms`);
+      };
+
+      window.testLargePayload = () => {
+        const largeArray = new Array(1000).fill(0).map((_, i) => ({
+          index: i,
+          data: `Item ${i}`,
+          nested: { value: Math.random() },
+        }));
+        console.log("Large payload:", largeArray);
+      };
+
+      window.testDeepNesting = () => {
+        let obj = { level: 50 };
+        for (let i = 49; i >= 0; i--) {
+          obj = { level: i, child: obj };
+        }
+        console.log("Deeply nested object:", obj);
+      };
+
+      window.testManyErrors = () => {
+        console.log("Triggering multiple errors...");
+        for (let i = 0; i < 10; i++) {
+          setTimeout(() => {
+            throw new Error(`Error ${i + 1} of 10`);
+          }, i * 100);
+        }
+      };
+
+      window.testMemoryIntensive = () => {
+        console.log("Starting memory intensive test...");
+        const arrays = [];
+        for (let i = 0; i < 100; i++) {
+          arrays.push(new Array(10000).fill(Math.random()));
+          console.log(`Created array ${i + 1}`);
+        }
+        console.log("Memory test complete");
+      };
+
+      window.testBenchmark = () => {
+        console.log("Running benchmark...");
+        const iterations = 1000;
+        const start = performance.now();
+
+        for (let i = 0; i < iterations; i++) {
+          console.log(`Benchmark iteration ${i}`);
+        }
+
+        const end = performance.now();
+        const duration = end - start;
+        const opsPerSecond = ((iterations / duration) * 1000).toFixed(0);
+
+        console.log(
+          `Benchmark complete: ${iterations} iterations in ${duration.toFixed(
+            2
+          )}ms`
+        );
+        console.log(`Performance: ${opsPerSecond} ops/sec`);
+      };
+
+      // Control Functions
+      window.clearLocalOutput = () => {
+        localOutput.innerHTML = "";
+        logCount = 0;
+        console.log("🧹 Local output cleared");
+      };
+
+      window.toggleLogging = () => {
+        localLogging = !localLogging;
+        console.log(
+          `📝 Local logging ${localLogging ? "enabled" : "disabled"}`
+        );
+      };
+
+      window.runAllTests = async () => {
+        console.log("🚀 Running all tests...");
+
+        const tests = [
+          testConsoleLog,
+          testConsoleWarn,
+          testConsoleError,
+          testConsoleInfo,
+          testConsoleDebug,
+          testMultipleArgs,
+          testComplexObjects,
+          testNestedError,
+        ];
+
+        for (const test of tests) {
+          test();
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+
+        console.log("✅ All tests completed");
+      };
 
       // Auto-test on load
       setTimeout(() => {
-        console.log("Auto test from index.html");
-      }, 1000);
+        console.log(
+          "🎉 Console Forward Plugin Test Suite loaded successfully!"
+        );
+        console.log("📍 Module context should show [index.html] in terminal");
+        console.log("🔬 Click any button to test specific features");
+      }, 500);
+
+      // Listen for errors globally to show they're being captured
+      window.addEventListener("error", (e) => {
+        addLocalLog("error", `Global error caught: ${e.message}`);
+      });
+
+      window.addEventListener("unhandledrejection", (e) => {
+        addLocalLog("error", `Unhandled rejection: ${e.reason}`);
+      });
     </script>
+    
   </body>
 </html>
